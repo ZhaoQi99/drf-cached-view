@@ -182,18 +182,17 @@ class BaseCache:
 
 
 class ViewCache(BaseCache):
-    def __init__(self, serializer_class=None, view=None):
+    def __init__(self, serializer_class=None):
         self.serializer_class = serializer_class
-        self.view = view
-        self.queryset = view.queryset
         super().__init__()
 
     def get_serializer(self, model_name):
         return lambda x: self.serializer_class(x).data
 
     def get_loader(self, model_name):
-        return lambda x: self.queryset.model.objects.get(
-            **{self.view.lookup_field: x},
+        model = self.get_model(model_name)
+        return lambda x: model.objects.get(
+            **{'pk': x},
         )
 
     def get_invalidator(self, model_name):

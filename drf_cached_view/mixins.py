@@ -68,7 +68,4 @@ class BaseCachedViewMixin:
 
 class CachedViewMixin(BaseCachedViewMixin):
     def get_queryset_cache(self):
-        return self.cache_class(
-            serializer_class=self.get_serializer_class(),
-            view=self,
-        )
+        return self.cache_class(serializer_class=self.get_serializer_class())
