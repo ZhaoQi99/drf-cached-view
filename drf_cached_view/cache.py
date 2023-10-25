@@ -135,16 +135,23 @@ class BaseCache:
         self.cache.delete(key)
 
     def key_for(self, model_name, obj_pk):
-        model = self.get_model(model_name)
-        return self._key_for(model, obj_pk)
+        return "{prefix}_{key}".format(
+            prefix=cache_view_settings.CACHE_KEY_PREFIX,
+            key=self.get_model_key(model_name, obj_pk),
+        )
 
-    def _key_for(self, model, obj_pk):
+    def _model_key(self, model, obj_pk):
         return "{prefix}_{app_label}.{model_name}_{pk}".format(
             prefix=cache_view_settings.CACHE_KEY_PREFIX,
             app_label=model._meta.app_label,
             model_name=model._meta.model_name,
             pk=obj_pk,
         )
+
+    # Can be overridden
+    def get_model_key(self, model_name, obj_pk):
+        model = self.get_model(model_name)
+        return self._model_key(model, obj_pk)
 
     def get_serializer(self, model_name):
         raise NotImplementedError
@@ -189,3 +196,6 @@ class ViewCache(BaseCache):
 
     def get_invalidator(self, model_name):
         return []
+
+    def get_model_key(self, model_name, obj_pk):
+        return super().get_model_key(model_name, obj_pk)
