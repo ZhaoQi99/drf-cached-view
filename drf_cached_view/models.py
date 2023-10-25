@@ -85,6 +85,9 @@ class CachedQueryset(models.QuerySet):
             model_data = instances.get((model_name, pk), {})[0]
             yield CachedModel(self.model, model_data)
 
+    def __len__(self):
+        return self.count()
+
     def all(self):
         """Handle asking for an unfiltered queryset."""
         return self
