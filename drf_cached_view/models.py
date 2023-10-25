@@ -97,7 +97,7 @@ class CachedQueryset:
     def filter(self, **kwargs):
         """Filter the base queryset."""
         queryset = self.queryset.filter(**kwargs)
-        return self.__class__(self.cache, queryset, self._primary_keys)
+        return self.__class__(self.cache, queryset)
 
     def get(self, **kwargs):
         """Return the single item from the filtered queryset."""
@@ -106,10 +106,10 @@ class CachedQueryset:
         object_spec = (model_name, pk)
         instances = self.cache.get_instances((object_spec,))
         try:
-            model_data = instances[(model_name, pk)]
+            model_data = instances[(model_name, pk)][0]
         except KeyError:
             raise self.model.DoesNotExist(
-                "No match for %r with args %r, kwargs %r" % (self.model, args, kwargs)
+                "No match for %r with kwargs %r" % (self.model, kwargs)
             )
         else:
             return CachedModel(self.model, model_data)
@@ -125,4 +125,4 @@ class CachedQueryset:
     def order_by(self, *field_names):
         """Order the queryset."""
         queryset = self.queryset.order_by(*field_names)
-        return self.__class__(self.cache, queryset, [])
+        return self.__class__(self.cache, queryset)
