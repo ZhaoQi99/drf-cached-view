@@ -135,6 +135,8 @@ class CachedQueryset(models.QuerySet):
             pks = self.queryset.values_list("pk", flat=True)[key]
         else:
             pks = self.pks[key]
+            if isinstance(key, int):
+                pks = [pks]
         return CachedQueryset(self.cache, self.queryset, pks)
 
     def order_by(self, *field_names):
