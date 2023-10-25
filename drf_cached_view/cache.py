@@ -180,8 +180,8 @@ class BaseCache:
 
 
 class ViewCache(BaseCache):
-    def __init__(self, serializer=None, view=None):
-        self.serializer_class = serializer
+    def __init__(self, serializer_class=None, view=None):
+        self.serializer_class = serializer_class
         self.view = view
         self.queryset = view.queryset
         super().__init__()
@@ -198,4 +198,7 @@ class ViewCache(BaseCache):
         return []
 
     def get_model_key(self, model_name, obj_pk):
-        return super().get_model_key(model_name, obj_pk)
+        return "{key}_{serializer}".format(
+            key=super().get_model_key(model_name, obj_pk),
+            serializer=self.serializer_class.__name__,
+        )
