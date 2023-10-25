@@ -4,7 +4,7 @@ from django.apps import apps
 from django.conf import settings
 from rest_framework.settings import api_settings
 
-from .settings import cache_view_settings
+from .settings import cache_settings
 
 
 class BaseCache:
@@ -69,7 +69,7 @@ class BaseCache:
                 result[(model_name, obj_pk)] = (obj_native, obj_key, obj)
 
         if cache_to_set:
-            self.cache.set_many(cache_to_set)
+            self.cache.set_many(cache_to_set, cache_settings.TIMEOUT)
 
         return result
 
@@ -114,7 +114,7 @@ class BaseCache:
             if current != new:
                 if not update_only or (update_only and current):
                     perform_operation = True
-                    self.cache.set(key, json.dumps(new))
+                    self.cache.set(key, json.dumps(new), cache_settings.TIMEOUT)
 
         invalid = list()
         if instance and perform_operation:
@@ -136,7 +136,7 @@ class BaseCache:
 
     def key_for(self, model_name, obj_pk):
         return "{prefix}_{key}".format(
-            prefix=cache_view_settings.CACHE_KEY_PREFIX,
+            prefix=cache_settings.CACHE_KEY_PREFIX,
             key=self.get_model_key(model_name, obj_pk),
         )
 
