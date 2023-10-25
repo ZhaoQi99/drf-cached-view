@@ -141,8 +141,7 @@ class BaseCache:
         )
 
     def _model_key(self, model, obj_pk):
-        return "{prefix}_{app_label}.{model_name}_{pk}".format(
-            prefix=cache_view_settings.CACHE_KEY_PREFIX,
+        return "{app_label}.{model_name}_{pk}".format(
             app_label=model._meta.app_label,
             model_name=model._meta.model_name,
             pk=obj_pk,
