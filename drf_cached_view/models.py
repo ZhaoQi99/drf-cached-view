@@ -48,7 +48,7 @@ class CachedModel:
             return value
 
 
-class CachedQueryset:
+class CachedQueryset(models.QuerySet):
     """Emulate a Djange queryset, but with data loaded from the cache.
 
     A real queryset is used to get filtered lists of primary keys, but the
@@ -60,8 +60,9 @@ class CachedQueryset:
         self.cache = cache
         self.queryset = queryset
         self.model = queryset.model
-        self.filter_kwargs = {}
         self._primary_keys = primary_keys
+
+        super().__init__(self.model, queryset._query, queryset._db, queryset._hints)
 
     @property
     def pks(self):
