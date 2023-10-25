@@ -52,6 +52,12 @@ class CachedModel:
         else:
             return getattr(self.obj, name)
 
+    def __str__(self):
+        return str(self.obj)
+
+    def __repr__(self):
+        return "<%s %r>" % (self.__class__.__name__, self.obj)
+
 
 class CachedQueryset(models.QuerySet):
     """Emulate a Djange queryset, but with data loaded from the cache.
