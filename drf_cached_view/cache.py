@@ -8,6 +8,9 @@ from .settings import cache_settings
 
 
 class BaseCache:
+    def __init__(self) -> None:
+        self._cache = None
+
     def get_model(self, model_name):
         try:
             app_label, model_name = model_name.split(".", 1)
@@ -66,7 +69,7 @@ class BaseCache:
                     cache_to_set[obj_key] = obj_native
 
             if obj_native:
-                result[(model_name, obj_pk)] = (obj_native, obj_key, obj)
+                result[(model_name, obj_pk)] = (obj_native, obj_key)
 
         if cache_to_set:
             self.cache.set_many(cache_to_set, cache_settings.TIMEOUT)

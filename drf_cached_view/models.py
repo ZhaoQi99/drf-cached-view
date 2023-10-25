@@ -34,18 +34,23 @@ class CachedModel:
 
     def __getattr__(self, name):
         """Return an attribute from the cached data."""
+        if name in self.__dict__:
+            return self.__dict__[name]
+
         try:
-            value = getattr(self.obj, name)
-        except AttributeError:
+            self._model._meta.get_field(name)
+        except FieldDoesNotExist:
             if name in self._data:
                 return self._data[name]
+            elif name in ['pk',]:
+                return getattr(self.obj, name)
             else:
                 raise AttributeError(
                     "%r for %r has no attribute %r"
                     % (self.__class__, self._model._meta.object_name, name)
                 )
         else:
-            return value
+            return getattr(self.obj, name)
 
 
 class CachedQueryset(models.QuerySet):
@@ -77,7 +82,7 @@ class CachedQueryset(models.QuerySet):
         object_specs = [(model_name, pk) for pk in self.pks]
         instances = self.cache.get_instances(object_specs)
         for pk in self.pks:
-            model_data = instances.get((model_name, pk), {})
+            model_data = instances.get((model_name, pk), {})[0]
             yield CachedModel(self.model, model_data)
 
     def all(self):
