@@ -1,34 +1,13 @@
-"""BaseCache for foundation of app-specific caching strategy."""
-
-from calendar import timegm
-from datetime import date, datetime, timedelta
-from pytz import utc
 import json
 
+from django.apps import apps
 from django.conf import settings
-from django.utils.dateparse import parse_date, parse_datetime
-from django.utils import six
+from rest_framework.settings import api_settings
 
-from .compat import get_model, parse_duration
-from .models import PkOnlyModel, PkOnlyQueryset
+from .settings import cache_view_settings
 
 
-class BaseCache(object):
-    """Base instance cache.
-
-    To make the cache useful, create a derived class with methods for
-    your Django models.  See drf_cached_instances/tests/test_user_example.py
-    for an example.
-    """
-
-    default_version = 'default'
-    versions = ['default']
-
-    def __init__(self):
-        """Initialize BaseCache."""
-        self._cache = None
-        assert self.default_version in self.versions
-
+class BaseCache:
     @property
     def cache(self):
         """Get the Django cache interface.
@@ -38,297 +17,175 @@ class BaseCache(object):
         Django Debug Toolbar will record cache requests.
         """
         if not self._cache:
-            use_cache = getattr(settings, 'USE_DRF_INSTANCE_CACHE', True)
+            use_cache = getattr(settings, "USE_DRF_INSTANCE_CACHE", True)
             if use_cache:
                 from django.core.cache import cache
+
                 self._cache = cache
         return self._cache
 
-    def key_for(self, version, model_name, obj_pk):
-        """Get the cache key for the cached instance."""
-        return 'drfc_{0}_{1}_{2}'.format(version, model_name, obj_pk)
+    def get_model(self, model_name):
+        try:
+            app_label, model_name = model_name.split(".", 1)
+        except ValueError:
+            app_label = None
 
-    def delete_all_versions(self, model_name, obj_pk):
-        """Delete all versions of a cached instance."""
-        if self.cache:
-            for version in self.versions:
-                key = self.key_for(version, model_name, obj_pk)
-                self.cache.delete(key)
+        if app_label:
+            return apps.get_model(app_label, model_name)
 
-    def model_function(self, model_name, version, func_name):
-        """Return the model-specific caching function."""
-        assert func_name in ('serializer', 'loader', 'invalidator')
-        name = "%s_%s_%s" % (model_name.lower(), version, func_name)
-        return getattr(self, name)
+        models = list()
+        for model in apps.get_models():
+            if model._meta.model_name.lower() == model_name.lower():
+                models.append(model)
 
-    def field_function(self, type_code, func_name):
-        """Return the field function."""
-        assert func_name in ('to_json', 'from_json')
-        name = "field_%s_%s" % (type_code.lower(), func_name)
-        return getattr(self, name)
+        if len(models) > 1:
+            raise LookupError("More than one models found with name '%s'." % model_name)
+        elif len(models) == 0:
+            raise LookupError("Model '%s' not found." % model_name)
 
-    def field_to_json(self, type_code, key, *args, **kwargs):
-        """Convert a field to a JSON-serializable representation."""
-        assert ':' not in key
-        to_json = self.field_function(type_code, 'to_json')
-        key_and_type = "%s:%s" % (key, type_code)
-        json_value = to_json(*args, **kwargs)
-        return key_and_type, json_value
+        return models[0]
 
-    def field_from_json(self, key_and_type, json_value):
-        """Convert a JSON-serializable representation back to a field."""
-        assert ':' in key_and_type
-        key, type_code = key_and_type.split(':', 1)
-        from_json = self.field_function(type_code, 'from_json')
-        value = from_json(json_value)
-        return key, value
+    def key_for(self, model_name, obj_pk):
+        model = self.get_model(model_name)
+        return self._key_for(model, obj_pk)
 
-    def get_instances(self, object_specs, version=None):
-        """Get the cached native representation for one or more objects.
+    def _key_for(self, model, obj_pk):
+        return "{prefix}_{app_label}.{model_name}_{pk}".format(
+            prefix=cache_view_settings.CACHE_KEY_PREFIX,
+            app_label=model._meta.app_label,
+            model_name=model._meta.model_name,
+            pk=obj_pk,
+        )
 
-        Keyword arguments:
-        object_specs - A sequence of triples (model name, pk, obj):
-        - model name - the name of the model
-        - pk - the primary key of the instance
-        - obj - the instance, or None to load it
-        version - The cache version to use, or None for default
+    def delete(self, model_name, obj_pk):
+        key = self.key_for(model_name, obj_pk)
+        self.cache.delete(key)
 
-        To get the 'new object' representation, set pk and obj to None
+    def get_serializer(self, model_name):
+        raise NotImplementedError
 
-        Return is a dictionary:
-        key - (model name, pk)
-        value - (native representation, pk, object or None)
+    def get_loader(self, model_name):
+        raise NotImplementedError
+
+    def get_invalidator(self, model_name):
+        raise NotImplementedError
+
+    def get_instances(self, object_specs):
         """
-        ret = dict()
+        Get objects from cache or database based on the given object specifications.
+
+        Args:
+            object_specs (list): A list of tuples containing the model name and object primary key.
+
+        Returns:
+            dict: A dictionary containing the fetched objects and their corresponding keys.
+
+        """
+        result = dict()
         spec_keys = set()
         cache_keys = []
-        version = version or self.default_version
 
         # Construct all the cache keys to fetch
-        for model_name, obj_pk, obj in object_specs:
-            assert model_name
-            assert obj_pk
-
-            # Get cache keys to fetch
-            obj_key = self.key_for(version, model_name, obj_pk)
-            spec_keys.add((model_name, obj_pk, obj, obj_key))
+        for model_name, obj_pk in object_specs:
+            obj_key = self.key_for(model_name, obj_pk)
+            spec_keys.add((model_name, obj_pk, obj_key))
             cache_keys.append(obj_key)
 
-        # Fetch the cache keys
-        if cache_keys and self.cache:
-            cache_vals = self.cache.get_many(cache_keys)
-        else:
-            cache_vals = {}
+        cache_values = self.cache.get_many(cache_keys)
 
-        # Use cached representations, or recreate
         cache_to_set = {}
-        for model_name, obj_pk, obj, obj_key in spec_keys:
+        for model_name, obj_pk, obj_key in spec_keys:
+            obj_native = cache_values.get(obj_key, None)
 
-            # Load cached objects
-            obj_val = cache_vals.get(obj_key)
-            obj_native = json.loads(obj_val) if obj_val else None
+            # If the object is not in cache or invalid, load from database
+            if obj_native is None:
+                obj = self.get_loader(model_name)(obj_pk)
+                serializer = self.get_serializer(model_name)
+                obj_native = serializer(obj) if obj else None
 
-            # Invalid or not set - load from database
-            if not obj_native:
-                if not obj:
-                    loader = self.model_function(model_name, version, 'loader')
-                    obj = loader(obj_pk)
-                serializer = self.model_function(
-                    model_name, version, 'serializer')
-                obj_native = serializer(obj) or {}
-                if obj_native:
-                    cache_to_set[obj_key] = json.dumps(obj_native)
-
-            # Get fields to convert
-            keys = [key for key in obj_native.keys() if ':' in key]
-            for key in keys:
-                json_value = obj_native.pop(key)
-                name, value = self.field_from_json(key, json_value)
-                assert name not in obj_native
-                obj_native[name] = value
+                if obj:
+                    cache_to_set[obj_key] = obj_native
 
             if obj_native:
-                ret[(model_name, obj_pk)] = (obj_native, obj_key, obj)
+                result[(model_name, obj_pk)] = (obj_native, obj_key, obj)
 
-        # Save any new cached representations
-        if cache_to_set and self.cache:
+        if cache_to_set:
             self.cache.set_many(cache_to_set)
 
-        return ret
+        return result
 
-    def update_instance(
-            self, model_name, pk, instance=None, version=None,
-            update_only=False):
-        """Create or update a cached instance.
-
-        Keyword arguments are:
-        model_name - The name of the model
-        pk - The primary key of the instance
-        instance - The Django model instance, or None to load it
-        versions - Version to update, or None for all
-        update_only - If False (default), then missing cache entries will be
-            populated and will cause follow-on invalidation.  If True, then
-            only entries already in the cache will be updated and cause
-            follow-on invalidation.
-
-        Return is a list of tuples (model name, pk, immediate) that also needs
-        to be updated.
+    def update_instance(self, model_name, pk, instance=None, update_only=False):
         """
-        versions = [version] if version else self.versions
-        invalid = []
-        for version in versions:
-            serializer = self.model_function(model_name, version, 'serializer')
-            loader = self.model_function(model_name, version, 'loader')
-            invalidator = self.model_function(
-                model_name, version, 'invalidator')
-            if serializer is None and loader is None and invalidator is None:
-                continue
+        Create or update a cached instance.
 
-            if self.cache is None:
-                continue
+        Args:
+            model_name (str): The name of the model.
+            pk (int): The primary key of the instance.
+            instance (object, optional): The Django model instance, or None to load it.
+            update_only (bool, optional): If False (default), then missing cache entries will be
+                populated and will cause follow-on invalidation. If True, then only entries already
+                in the cache will be updated and cause follow-on invalidation.
 
-            # Try to load the instance
-            if not instance:
-                instance = loader(pk)
+        Returns:
+            list: A list of tuples (model name, pk, immediate) that also needs to be updated.
+        """
+        serializer = self.get_serializer(model_name)
+        loader = self.get_loader(model_name)
+        invalidator = self.get_invalidator(model_name)
 
-            if serializer:
-                # Get current value, if in cache
-                key = self.key_for(version, model_name, pk)
-                current_raw = self.cache.get(key)
-                current = json.loads(current_raw) if current_raw else None
+        if serializer is None and loader is None and invalidator is None:
+            return
 
-                # Get new value
-                if update_only and current_raw is None:
-                    new = None
+        # Try to load the instance
+        if not instance:
+            instance = loader(pk)
+
+        # Get current value, if in cache
+        key = self.key_for(model_name, pk)
+        current = self.cache.get(key, default=None)
+
+        perform_operation = False
+
+        if instance is None:
+            if current:  # Clear cache
+                perform_operation = True
+                self.cache.delete(key)
+        else:
+            new = serializer(instance)
+            if current != new:
+                if not update_only or (update_only and current):
+                    perform_operation = True
+                    self.cache.set(key, json.dumps(new))
+
+        invalid = list()
+        if instance and perform_operation:
+            for upstream in invalidator(instance):
+                if isinstance(upstream, str):
+                    self.cache.delete(upstream)
                 else:
-                    new = serializer(instance)
-                deleted = not instance
-
-                # If cache is invalid, update cache
-                invalidate = (current != new) or deleted
-                if invalidate:
-                    if deleted:
+                    model_name, pk, immediate = upstream
+                    if immediate:
+                        key = self.key_for(model_name, pk)
                         self.cache.delete(key)
-                    else:
-                        self.cache.set(key, json.dumps(new))
-            else:
-                invalidate = True
+                    invalid.append((model_name, pk, immediate))
 
-            # Invalidate upstream caches
-            if instance and invalidate:
-                for upstream in invalidator(instance):
-                    if isinstance(upstream, str):
-                        self.cache.delete(upstream)
-                    else:
-                        m, i, immediate = upstream
-                        if immediate:
-                            invalidate_key = self.key_for(version, m, i)
-                            self.cache.delete(invalidate_key)
-                        invalid.append((m, i, version))
         return invalid
 
-    #
-    # Built-in Field converters
-    #
 
-    def field_date_from_json(self, date_triple):
-        """Convert a date triple to the date."""
-        return date(*date_triple) if date_triple else None
+class ViewCache(BaseCache):
+    def __init__(self, serializer=None, view=None):
+        self.serializer_class = serializer
+        self.view = view
+        self.queryset = view.queryset
+        super().__init__()
 
-    def field_date_to_json(self, day):
-        """Convert a date to a date triple."""
-        if isinstance(day, six.string_types):
-            day = parse_date(day)
-        return [day.year, day.month, day.day] if day else None
+    def get_serializer(self, model_name):
+        return lambda x: self.serializer_class(x).data
 
-    def field_datetime_from_json(self, json_val):
-        """Convert a UTC timestamp to a UTC datetime."""
-        if type(json_val) == int:
-            seconds = int(json_val)
-            dt = datetime.fromtimestamp(seconds, utc)
-        elif json_val is None:
-            dt = None
-        else:
-            seconds, microseconds = [int(x) for x in json_val.split('.')]
-            dt = datetime.fromtimestamp(seconds, utc)
-            dt += timedelta(microseconds=microseconds)
-        return dt
+    def get_loader(self, model_name):
+        return lambda x: self.queryset.model.objects.get(
+            **{self.view.lookup_field: x},
+        )
 
-    def field_datetime_to_json(self, dt):
-        """Convert a datetime to a UTC timestamp w/ microsecond resolution.
-
-        datetimes w/o timezone will be assumed to be in UTC
-        """
-        if isinstance(dt, six.string_types):
-            dt = parse_datetime(dt)
-        if not dt:
-            return None
-        ts = timegm(dt.utctimetuple())
-        if dt.microsecond:
-            return "{0}.{1:0>6d}".format(ts, dt.microsecond)
-        else:
-            return ts
-
-    def field_timedelta_from_json(self, json_val):
-        """Convert json_val to a timedelta object.
-
-        json_val contains total number of seconds in the timedelta.
-        If json_val is a string it will be converted to a float.
-        """
-        if isinstance(json_val, str):
-            return timedelta(seconds=float(json_val))
-        elif json_val is None:
-            return None
-        else:
-            return timedelta(seconds=json_val)
-
-    def field_timedelta_to_json(self, td):
-        """Convert timedelta to value containing total number of seconds.
-
-        If there are fractions of a second the return value will be a
-        string, otherwise it will be an int.
-        """
-        if isinstance(td, six.string_types):
-            td = parse_duration(td)
-        if not td:
-            return None
-        if td.microseconds > 0:
-            return str(td.total_seconds())
-        else:
-            return int(td.total_seconds())
-
-    def field_pklist_from_json(self, data):
-        """Load a PkOnlyQueryset from a JSON dict.
-
-        This uses the same format as cached_queryset_from_json
-        """
-        model = get_model(data['app'], data['model'])
-        return PkOnlyQueryset(self, model, data['pks'])
-
-    def field_pklist_to_json(self, model, pks):
-        """Convert a list of primary keys to a JSON dict.
-
-        This uses the same format as cached_queryset_to_json
-        """
-        app_label = model._meta.app_label
-        model_name = model._meta.model_name
-        return {
-            'app': app_label,
-            'model': model_name,
-            'pks': list(pks),
-        }
-
-    def field_pk_from_json(self, data):
-        """Load a PkOnlyModel from a JSON dict."""
-        model = get_model(data['app'], data['model'])
-        return PkOnlyModel(self, model, data['pk'])
-
-    def field_pk_to_json(self, model, pk):
-        """Convert a primary key to a JSON dict."""
-        app_label = model._meta.app_label
-        model_name = model._meta.model_name
-        return {
-            'app': app_label,
-            'model': model_name,
-            'pk': pk,
-        }
+    def get_invalidator(self, model_name):
+        return []

@@ -1,17 +1,15 @@
-"""Mixins to add caching to Django REST Framework viewsets."""
 from django.http import Http404
 from rest_framework.generics import get_object_or_404
 
 from .models import CachedQueryset
 
 
-class CachedViewMixin(object):
+class CachedViewMixin:
     """Mixin to add caching to a DRF viewset.
 
     A user should either define cache_class or override get_queryset_cache().
     """
 
-    cache_version = 'default'
     get_object_or_404 = get_object_or_404
 
     def get_queryset(self):
@@ -21,7 +19,7 @@ class CachedViewMixin(object):
         Otherwise, return a Django queryset
         """
         queryset = super(CachedViewMixin, self).get_queryset()
-        if self.action in ('list', 'retrieve'):
+        if self.action in ("list", "retrieve"):
             return CachedQueryset(self.get_queryset_cache(), queryset=queryset)
         else:
             return queryset
@@ -63,7 +61,6 @@ class CachedViewMixin(object):
             try:
                 return queryset.get(*filter_args, **filter_kwargs)
             except queryset.model.DoesNotExist:
-                raise Http404(
-                    'No %s matches the given query.' % queryset.model)
+                raise Http404("No %s matches the given query." % queryset.model)
         else:
             return get_object_or_404(queryset, *filter_args, **filter_kwargs)
