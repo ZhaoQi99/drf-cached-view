@@ -28,22 +28,26 @@ class BaseCachedViewMixin:
         """Get the cache to use for querysets."""
         return self.cache_class()
 
-    def get_object(self, queryset=None):
+    def get_object(self):
         """
         Return the object the view is displaying.
 
         Same as rest_framework.generics.GenericAPIView, but:
         - Failed assertions instead of deprecations
         """
-        # Determine the base queryset to use.
-        assert queryset is None, "Passing a queryset is disabled"
         queryset = self.filter_queryset(self.get_queryset())
 
         # Perform the lookup filtering.
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
-        lookup = self.kwargs.get(lookup_url_kwarg, None)
-        assert lookup is not None, "Other lookup methods are disabled"
-        filter_kwargs = {self.lookup_field: lookup}
+
+        assert lookup_url_kwarg in self.kwargs, (
+            "Expected view %s to be called with a URL keyword argument "
+            'named "%s". Fix your URL conf, or set the `.lookup_field` '
+            "attribute on the view correctly."
+            % (self.__class__.__name__, lookup_url_kwarg)
+        )
+
+        filter_kwargs = {self.lookup_field: self.kwargs[lookup_url_kwarg]}
         obj = self.get_object_or_404(queryset, **filter_kwargs)
 
         # May raise a permission denied
