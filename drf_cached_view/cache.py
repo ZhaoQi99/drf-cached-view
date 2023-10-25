@@ -8,22 +8,6 @@ from .settings import cache_view_settings
 
 
 class BaseCache:
-    @property
-    def cache(self):
-        """Get the Django cache interface.
-
-        This allows disabling the cache with
-        settings.USE_DRF_INSTANCE_CACHE=False.  It also delays import so that
-        Django Debug Toolbar will record cache requests.
-        """
-        if not self._cache:
-            use_cache = getattr(settings, "USE_DRF_INSTANCE_CACHE", True)
-            if use_cache:
-                from django.core.cache import cache
-
-                self._cache = cache
-        return self._cache
-
     def get_model(self, model_name):
         try:
             app_label, model_name = model_name.split(".", 1)
@@ -44,31 +28,6 @@ class BaseCache:
             raise LookupError("Model '%s' not found." % model_name)
 
         return models[0]
-
-    def key_for(self, model_name, obj_pk):
-        model = self.get_model(model_name)
-        return self._key_for(model, obj_pk)
-
-    def _key_for(self, model, obj_pk):
-        return "{prefix}_{app_label}.{model_name}_{pk}".format(
-            prefix=cache_view_settings.CACHE_KEY_PREFIX,
-            app_label=model._meta.app_label,
-            model_name=model._meta.model_name,
-            pk=obj_pk,
-        )
-
-    def delete(self, model_name, obj_pk):
-        key = self.key_for(model_name, obj_pk)
-        self.cache.delete(key)
-
-    def get_serializer(self, model_name):
-        raise NotImplementedError
-
-    def get_loader(self, model_name):
-        raise NotImplementedError
-
-    def get_invalidator(self, model_name):
-        raise NotImplementedError
 
     def get_instances(self, object_specs):
         """
@@ -170,6 +129,47 @@ class BaseCache:
                     invalid.append((model_name, pk, immediate))
 
         return invalid
+
+    def delete(self, model_name, obj_pk):
+        key = self.key_for(model_name, obj_pk)
+        self.cache.delete(key)
+
+    def key_for(self, model_name, obj_pk):
+        model = self.get_model(model_name)
+        return self._key_for(model, obj_pk)
+
+    def _key_for(self, model, obj_pk):
+        return "{prefix}_{app_label}.{model_name}_{pk}".format(
+            prefix=cache_view_settings.CACHE_KEY_PREFIX,
+            app_label=model._meta.app_label,
+            model_name=model._meta.model_name,
+            pk=obj_pk,
+        )
+
+    def get_serializer(self, model_name):
+        raise NotImplementedError
+
+    def get_loader(self, model_name):
+        raise NotImplementedError
+
+    def get_invalidator(self, model_name):
+        raise NotImplementedError
+
+    @property
+    def cache(self):
+        """Get the Django cache interface.
+
+        This allows disabling the cache with
+        settings.USE_DRF_INSTANCE_CACHE=False.  It also delays import so that
+        Django Debug Toolbar will record cache requests.
+        """
+        if not self._cache:
+            use_cache = getattr(settings, "USE_DRF_INSTANCE_CACHE", True)
+            if use_cache:
+                from django.core.cache import cache
+
+                self._cache = cache
+        return self._cache
 
 
 class ViewCache(BaseCache):
