@@ -2,6 +2,7 @@ import json
 
 from django.apps import apps
 from django.conf import settings
+from django.forms import model_to_dict
 from rest_framework.settings import api_settings
 
 from .settings import cache_settings
@@ -156,13 +157,16 @@ class BaseCache:
         return self._model_key(model, obj_pk)
 
     def get_serializer(self, model_name):
-        raise NotImplementedError
+        raise lambda x: model_to_dict(x)
 
     def get_loader(self, model_name):
-        raise NotImplementedError
+        model = self.get_model(model_name)
+        return lambda x: model.objects.get(
+            **{"pk": x},
+        )
 
     def get_invalidator(self, model_name):
-        raise NotImplementedError
+        return None
 
     @property
     def cache(self):
@@ -188,15 +192,6 @@ class ViewCache(BaseCache):
 
     def get_serializer(self, model_name):
         return lambda x: self.serializer_class(x).data
-
-    def get_loader(self, model_name):
-        model = self.get_model(model_name)
-        return lambda x: model.objects.get(
-            **{'pk': x},
-        )
-
-    def get_invalidator(self, model_name):
-        return []
 
     def get_model_key(self, model_name, obj_pk):
         return "{key}_{serializer}".format(
