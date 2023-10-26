@@ -1,5 +1,3 @@
-import json
-
 from django.apps import apps
 from django.conf import settings
 from django.forms import model_to_dict
@@ -118,10 +116,10 @@ class BaseCache:
             if current != new:
                 if not update_only or (update_only and current):
                     perform_operation = True
-                    self.cache.set(key, json.dumps(new), cache_settings.TIMEOUT)
+                    self.cache.set(key, new, cache_settings.TIMEOUT)
 
         invalid = list()
-        if instance and perform_operation:
+        if invalidator and instance and perform_operation:
             for upstream in invalidator(instance):
                 if isinstance(upstream, str):
                     self.cache.delete(upstream)
