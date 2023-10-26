@@ -38,11 +38,12 @@ class CachedModel:
             return self.__dict__[name]
 
         try:
-            self._model._meta.get_field(name)
+            self._model._meta.get_field(name)  # Only Model fields without property
         except FieldDoesNotExist:
             if name in self._data:
                 return self._data[name]
-            elif name in ['pk',]:
+
+            if hasattr(self.obj, name):
                 return getattr(self.obj, name)
             else:
                 raise AttributeError(
