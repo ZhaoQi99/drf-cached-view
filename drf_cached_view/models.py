@@ -138,7 +138,7 @@ class CachedQueryset(models.QuerySet):
             pks = self.pks[key]
             if isinstance(key, int):
                 pks = [pks]
-        return CachedQueryset(self.cache, self.queryset, pks)
+        return self.__class__(self.cache, self.queryset[key], pks)
 
     def order_by(self, *field_names):
         """Order the queryset."""
