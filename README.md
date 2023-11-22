@@ -5,6 +5,7 @@
 [![PyPI package](https://img.shields.io/pypi/v/drf-access-key.svg)](https://pypi.python.org/pypi/drf-access-key)
 
 [![GitHub](https://img.shields.io/github/license/ZhaoQi99/drf-cached-view)](https://github.com/ZhaoQi99/drf-cached-view/blob/main/LICENSE)
+[![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2FZhaoQi99%2Fdrf-cached-view&count_bg=%2379C83D&title_bg=%23555555&icon=github.svg&icon_color=%23E7E7E7&title=visitors&edge_flat=false)](https://hits.seeyoufarm.com)
 [![PyPI download](https://img.shields.io/pypi/dm/drf-access-key.svg)](https://pypi.python.org/pypi/drf-access-key)
 ![GitHub last commit (by committer)](https://img.shields.io/github/last-commit/ZhaoQi99/drf-access-key)
 
